@@ -1043,6 +1043,68 @@
                 }
             }
         },
+        "resmico": {
+            "title": "ResMiCo mis-assembly detection",
+            "type": "object",
+            "description": "Options for ResMiCo deep-learning based mis-assembly detection.",
+            "default": "",
+            "properties": {
+                "run_resmico": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable ResMiCo mis-assembly detection and filtering of assemblies."
+                },
+                "skip_resmico_bam2feat": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip the RESMICO_BAM2FEAT step (feature extraction from BAM and FASTA)."
+                },
+                "skip_resmico_evaluate": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip the RESMICO_EVALUATE step (mis-assembly scoring)."
+                },
+                "skip_resmico_filter": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip the RESMICO_FILTER step (removal of predicted mis-assembled contigs)."
+                },
+                "resmico_precomputed_features": {
+                    "type": "string",
+                    "description": "Path to a pre-computed resmico_features directory (output of a previous RESMICO_BAM2FEAT run). When provided, RESMICO_BAM2FEAT is skipped and evaluate runs directly on these features."
+                },
+                "resmico_min_contig_len": {
+                    "type": "integer",
+                    "default": 1000,
+                    "description": "Minimum contig length for ResMiCo pre-filtering and evaluation. Shorter contigs are excluded before bam2feat and ignored by evaluate."
+                },
+                "resmico_min_avg_coverage": {
+                    "type": "number",
+                    "default": 1.0,
+                    "description": "Minimum average coverage for a contig to be evaluated by ResMiCo."
+                },
+                "resmico_score_cutoff": {
+                    "type": "number",
+                    "default": 0.5,
+                    "description": "ResMiCo prediction score cutoff. Contigs with score >= cutoff are removed."
+                },
+                "resmico_max_coverage": {
+                    "type": "number",
+                    "default": 20.0,
+                    "description": "Subsample mapped reads to this maximum coverage per contig (bam2feat)."
+                },
+                "resmico_window": {
+                    "type": "integer",
+                    "default": 6,
+                    "description": "Sliding window size for sequence entropy and GC content calculation (bam2feat)."
+                },
+                "resmico_seed": {
+                    "type": "integer",
+                    "default": 8192,
+                    "description": "Seed for reproducible read subsampling in ResMiCo bam2feat."
+                }
+            }
+        },
         "ancient_dna_assembly": {
             "title": "Ancient DNA assembly",
             "type": "object",
@@ -1134,6 +1196,9 @@
         },
         {
             "$ref": "#/$defs/bin_quality_check_options"
+        },
+        {
+            "$ref": "#/$defs/resmico"
         },
         {
             "$ref": "#/$defs/ancient_dna_assembly"

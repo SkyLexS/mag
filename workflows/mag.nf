@@ -36,6 +36,9 @@ include { PROKKA                          } from '../modules/nf-core/prokka/main
 include { MMSEQS_DATABASES                } from '../modules/nf-core/mmseqs/databases/main'
 include { METAEUK_EASYPREDICT             } from '../modules/nf-core/metaeuk/easypredict/main'
 include { ALE                             } from '../modules/nf-core/ale/main'
+include { RESMICO_BAM2FEAT                  } from '../modules/local/resmico/bam2feat/main'
+include { RESMICO_EVALUATE                  } from '../modules/local/resmico/evaluate/main'
+include { RESMICO_FILTER                    } from '../modules/local/resmico/filter/main'
 
 //
 // MODULE: Local to the pipeline
@@ -293,6 +296,73 @@ workflow MAG {
         ALE(ch_ale_input)
         ch_versions = ch_versions.mix(ALE.out.versions.ifEmpty([]))
     }
+    /*
+    ========================================================================================
+        ResMiCo - Mis-assembly detection
+    ========================================================================================
+    */
+
+    if (params.run_resmico) {
+        ch_resmico_input = BINNING_PREPARATION.out.grouped_mappings
+            .join(ch_assemblies, by: 0)
+            .map { meta, _contigs, bams, bais, assembly ->
+                // Pick the BAM matching this sample; fall back to first sorted BAM
+                def own_bam = bams.find { bam -> bam.name.endsWith("-${meta.id}.bam") }
+                def bam     = own_bam ?: bams.sort()[0]
+                def own_bai = bais.find { bai -> bai.name.endsWith("-${meta.id}.bam.bai") }
+                def bai     = own_bai ?: bais.sort()[0]
+                [meta, assembly, bam, bai]
+            }
+
+        // ── RESMICO_BAM2FEAT ──────────────────────────────────────────────────
+        // Extract per-contig features from the FASTA + BAM.
+        // If resmico_precomputed_features is set, skip this step entirely and
+        // use the provided directory directly for evaluate.
+        // errorStrategy 'ignore' is set in modules.config so that samples
+        // which crash in the C++ binary are skipped without failing the pipeline.
+        if (params.resmico_precomputed_features) {
+            ch_bam2feat_out = ch_resmico_input
+                .map { meta, fa, bam, bai ->
+                    [ meta, file(params.resmico_precomputed_features) ]
+                }
+        } else if (!params.skip_resmico_bam2feat) {
+            RESMICO_BAM2FEAT(ch_resmico_input)
+            ch_versions     = ch_versions.mix(RESMICO_BAM2FEAT.out.versions)
+            ch_bam2feat_out = RESMICO_BAM2FEAT.out.features_dir
+        } else {
+            ch_bam2feat_out = channel.empty()
+        }
+
+        // ── RESMICO_EVALUATE ──────────────────────────────────────────────────
+        // Score each contig for mis-assembly likelihood using the feature tables.
+        if (!params.skip_resmico_evaluate) {
+            RESMICO_EVALUATE(ch_bam2feat_out)
+            ch_versions    = ch_versions.mix(RESMICO_EVALUATE.out.versions)
+            ch_evaluate_out = RESMICO_EVALUATE.out.predictions
+        } else {
+            ch_evaluate_out = channel.empty()
+        }
+
+        // ── RESMICO_FILTER ────────────────────────────────────────────────────
+        // Remove contigs predicted as mis-assembled from the assembly.
+        if (!params.skip_resmico_filter) {
+            ch_filter_input = ch_evaluate_out
+                .join(ch_resmico_input.map { meta, fa, bam, bai -> [meta, fa] }, by: 0)
+
+            RESMICO_FILTER(ch_filter_input)
+            ch_versions   = ch_versions.mix(RESMICO_FILTER.out.versions)
+            ch_filter_out = RESMICO_FILTER.out.filtered_fasta
+        } else {
+            ch_filter_out = channel.empty()
+        }
+
+        // Replace assemblies with ResMiCo-filtered versions.
+        // Samples without a filtered result keep their original assembly.
+        ch_assemblies = ch_assemblies
+            .join(ch_filter_out, by: 0, remainder: true)
+            .map { meta, original, filtered -> [meta, filtered ?: original] }
+    }
+
 
     /*
     ================================================================================
