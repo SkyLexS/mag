@@ -313,13 +313,55 @@ workflow MAG {
                 def bai     = own_bai ?: bais.sort()[0]
                 [meta, assembly, bam, bai]
             }
+            .filter { meta, assembly, bam, bai ->
+                // ═══════════════════════════════════════════════════════════════════════
+                // PRE-FLIGHT VALIDATION FOR RESMICO
+                // ResMiCo is known to crash (SIGSEGV, exit -11) on edge-case inputs.
+                // Based on published stability analysis, we filter out assemblies that
+                // fall outside the tool's reliable operating envelope.
+                // ═══════════════════════════════════════════════════════════════════════
+                
+                def min_contigs = params.resmico_min_contigs ?: 10
+                def min_assembly_size = params.resmico_min_assembly_size ?: 50000
+                def min_mean_contig_length = params.resmico_min_mean_contig_length ?: 1000
+                
+                // Count contigs in assembly
+                def contig_count = 0
+                def total_size = 0
+                assembly.withReader { reader ->
+                    reader.eachLine { line ->
+                        if (line.startsWith('>')) {
+                            contig_count++
+                        } else {
+                            total_size += line.trim().length()
+                        }
+                    }
+                }
+                
+                def mean_length = contig_count > 0 ? total_size / contig_count : 0
+                
+                // Log validation results
+                if (contig_count < min_contigs) {
+                    log.warn "[ResMiCo] SKIPPING ${meta.id}: Only ${contig_count} contigs (minimum: ${min_contigs}). ResMiCo is known to crash on very small assemblies."
+                    return false
+                }
+                if (total_size < min_assembly_size) {
+                    log.warn "[ResMiCo] SKIPPING ${meta.id}: Assembly size ${total_size} bp is below minimum ${min_assembly_size} bp"
+                    return false
+                }
+                if (mean_length < min_mean_contig_length) {
+                    log.warn "[ResMiCo] SKIPPING ${meta.id}: Mean contig length ${mean_length} bp is below minimum ${min_mean_contig_length} bp"
+                    return false
+                }
+                
+                log.info "[ResMiCo] ✓ ${meta.id}: ${contig_count} contigs, ${total_size} bp total, ${mean_length} bp mean length"
+                return true
+            }
 
         // ── RESMICO_BAM2FEAT ──────────────────────────────────────────────────
         // Extract per-contig features from the FASTA + BAM.
         // If resmico_precomputed_features is set, skip this step entirely and
         // use the provided directory directly for evaluate.
-        // errorStrategy 'ignore' is set in modules.config so that samples
-        // which crash in the C++ binary are skipped without failing the pipeline.
         if (params.resmico_precomputed_features) {
             ch_bam2feat_out = ch_resmico_input
                 .map { meta, fa, bam, bai ->

@@ -4,7 +4,9 @@ process RESMICO_FILTER {
 
     // WARN: Version information not provided by tool on CLI. Please update version string below when bumping container versions.
     conda "${moduleDir}/environment.yml"
-    container "quay.io/resmico-with-samtools:latest"
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'docker://community.wave.seqera.io/library/resmico_samtools_numpy_setuptools:50dc5f9a6dacdffe':
+        'community.wave.seqera.io/library/resmico_samtools_numpy_setuptools:50dc5f9a6dacdffe' }"
 
     input:
     tuple val(meta), path(predictions_csv), path(fasta)
@@ -30,7 +32,7 @@ process RESMICO_FILTER {
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         resmico: ${VERSION}
-    END_VERSIONS
+END_VERSIONS
     """
 
     stub:
@@ -42,6 +44,6 @@ process RESMICO_FILTER {
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         resmico: ${VERSION}
-    END_VERSIONS
+END_VERSIONS
     """
 }

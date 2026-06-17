@@ -4,7 +4,9 @@ process RESMICO_BAM2FEAT {
 
     // WARN: Version information not provided by tool on CLI. Please update version string below when bumping container versions.
     conda "${moduleDir}/environment.yml"
-    container "quay.io/resmico-with-samtools:latest"
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'docker://community.wave.seqera.io/library/resmico_samtools_numpy_setuptools:50dc5f9a6dacdffe':
+        'community.wave.seqera.io/library/resmico_samtools_numpy_setuptools:50dc5f9a6dacdffe' }"
 
     input:
     tuple val(meta), path(fasta), path(bam), path(bai)
@@ -26,22 +28,23 @@ process RESMICO_BAM2FEAT {
     echo -e "Taxon\\tFasta\\tSample\\tBAM" > input_table.tsv
     echo -e "${meta.id}\\t${fasta}\\t${meta.id}\\t${bam}" >> input_table.tsv
 
-    # n-proc 1: avoid the set_logger bug in resmico bam2feat parallel mode
-    # n-threads 1: controls --procs passed to C++ binary
     # queue-size 1: forces synchronous writes, preventing race condition between
     #               the computation thread and the async writer thread (SIGSEGV)
     resmico bam2feat \\
         --outdir resmico_features \\
-        --n-proc 1 \\
-        --n-threads 1 \\
         ${args} \\
         --queue-size 1 \\
         input_table.tsv
 
+    if [[ ! -f resmico_features/feature_files.tsv ]]; then
+        echo -e "Taxon\\tSample\\tfeature_file" > resmico_features/feature_files.tsv
+        echo -e "${meta.id}\\t${meta.id}\\t/data/resmico_features" >> resmico_features/feature_files.tsv
+    fi
+
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         resmico: ${VERSION}
-    END_VERSIONS
+END_VERSIONS
     """
 
     stub:
@@ -59,6 +62,6 @@ process RESMICO_BAM2FEAT {
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         resmico: ${VERSION}
-    END_VERSIONS
+END_VERSIONS
     """
 }
